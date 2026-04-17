@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sentence-evolver"
+version = "0.1.0"
+description = "Multi-agent sentence rewriting with orthogonal writer personas and Delphi consensus"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [
+    { name = "Kyeong Sun Kim", email = "ksk5429@users.noreply.github.com" },
+]
+keywords = [
+    "academic-writing",
+    "sentence-rewriting",
+    "multi-agent",
+    "swarm-intelligence",
+    "writing-style",
+    "ai-detection",
+    "delphi-method",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Text Processing :: Linguistic",
+]
+dependencies = [
+    "anthropic>=0.30.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/ksk5429/sentence_evolver"
+Repository = "https://github.com/ksk5429/sentence_evolver"
+Issues = "https://github.com/ksk5429/sentence_evolver/issues"
+
+[project.scripts]
+sentence-evolver = "cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.1",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
