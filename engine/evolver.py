@@ -87,6 +87,51 @@ def _parse_rewrite(raw: str, persona_name: str, original: str, round_num: int) -
     )
 
 
+def _ab_score(original: str, evolved: str) -> str:
+    """A/B scoring: verify the evolved sentence is actually better.
+
+    Runs lightweight heuristic checks (no API calls):
+    - If evolved is identical to original: "skip"
+    - If evolved has MORE AI filler patterns: "reject"
+    - If evolved is >50% longer (bloated): "reject"
+    - If evolved lost >30% of content words: "reject"
+    - Otherwise: "accept"
+    """
+    if original.strip() == evolved.strip():
+        return "skip"
+
+    # Check for AI filler in evolved that wasn't in original
+    import re
+    filler_patterns = [
+        r"\bIt is worth noting that\b",
+        r"\bFurthermore,\s",
+        r"\bMoreover,\s",
+        r"\bAdditionally,\s",
+        r"\bcould potentially\b",
+        r"\bmay possibly\b",
+        r"\bIt is important to\b",
+    ]
+    orig_filler = sum(1 for p in filler_patterns if re.search(p, original, re.I))
+    evolved_filler = sum(1 for p in filler_patterns if re.search(p, evolved, re.I))
+    if evolved_filler > orig_filler:
+        return "reject"
+
+    # Bloat check
+    orig_words = len(original.split())
+    evolved_words = len(evolved.split())
+    if orig_words > 0 and evolved_words > orig_words * 1.5:
+        return "reject"
+
+    # Content loss check — only reject if SUBSTANTIVE content is lost
+    # Skip for short results (filler removal can produce short but correct output)
+    orig_content = set(re.findall(r"\b[a-z]{4,}\b", original.lower()))
+    evolved_content = set(re.findall(r"\b[a-z]{4,}\b", evolved.lower()))
+    if len(orig_content) >= 5 and len(evolved_content & orig_content) < len(orig_content) * 0.5:
+        return "reject"
+
+    return "accept"
+
+
 class SentenceEvolver:
     """Multi-agent sentence evolution engine."""
 
@@ -269,6 +314,12 @@ class SentenceEvolver:
             sentence, issue_flags, round1, round2,
         )
 
+        # ── A/B Scoring: verify evolution is actually better ──────
+        ab_result = _ab_score(sentence, final_sentence)
+        if ab_result == "reject":
+            final_reasoning += "\n\n[A/B REJECTED: evolved version scored worse than original. Keeping original.]"
+            final_sentence = sentence
+
         return EvolutionResult(
             original=sentence,
             issue_flags=issue_flags,
@@ -282,6 +333,7 @@ class SentenceEvolver:
                 "delphi_enabled": self.enable_delphi,
                 "round1_count": len(round1),
                 "round2_count": len(round2),
+                "ab_result": ab_result,
             },
         )
 
@@ -398,6 +450,12 @@ class OfflineEvolver:
         if current and current[0].islower():
             current = current[0].upper() + current[1:]
 
+        # A/B scoring: verify evolution is better
+        final = current if applied else sentence
+        ab_result = _ab_score(sentence, final)
+        if ab_result == "reject":
+            final = sentence
+
         return EvolutionResult(
             original=sentence,
             issue_flags=issue_flags or [],
@@ -410,6 +468,6 @@ class OfflineEvolver:
                 round_num=1,
             )],
             round2_rewrites=[],
-            final_sentence=current if applied else sentence,
-            final_reasoning=f"Offline rule-based: {len(applied)} transforms applied",
+            final_sentence=final,
+            final_reasoning=f"Offline rule-based: {len(applied)} transforms applied (A/B: {ab_result})",
         )
