@@ -207,7 +207,7 @@ def main() -> None:
     # Evolve each sentence
     results: list[EvolutionResult] = []
     for i, (sentence, flags) in enumerate(sentences):
-        print(f"\nEvolving sentence {i + 1}/{len(sentences)}...")
+        print(f"\nEvolving sentence {i + 1}/{len(sentences)}...", file=sys.stderr)
         result = evolver.evolve(sentence, flags)
         results.append(result)
 
