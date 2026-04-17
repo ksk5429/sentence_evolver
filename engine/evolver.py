@@ -94,7 +94,9 @@ class SentenceEvolver:
         self,
         *,
         model: str = "claude-sonnet-4-20250514",
+        worker_model: str | None = None,
         max_tokens: int = 1024,
+        aggregator_max_tokens: int = 2048,
         personas: list[str] | None = None,
         enable_delphi: bool = True,
         parallel: bool = True,
@@ -107,7 +109,9 @@ class SentenceEvolver:
 
         self.client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
         self.model = model
+        self.worker_model = worker_model or model  # Haiku for workers, Sonnet for aggregator
         self.max_tokens = max_tokens
+        self.aggregator_max_tokens = aggregator_max_tokens
         self.enable_delphi = enable_delphi
         self.parallel = parallel
 
@@ -148,7 +152,7 @@ class SentenceEvolver:
         user_msg += "Now rewrite the sentence following your transformation strategy."
 
         response = self.client.messages.create(
-            model=self.model,
+            model=self.worker_model,
             max_tokens=self.max_tokens,
             system=persona.system_prompt,
             messages=[{"role": "user", "content": user_msg}],
@@ -179,17 +183,18 @@ class SentenceEvolver:
 
         if self.parallel:
             with ThreadPoolExecutor(max_workers=min(len(self.personas), 5)) as pool:
-                futures = {
-                    pool.submit(self._call_persona, p, sentence, issue_flags, 1): p
+                # Submit in persona order and collect in same order
+                # (critical for Delphi peer-exclusion indexing)
+                future_list = [
+                    pool.submit(self._call_persona, p, sentence, issue_flags, 1)
                     for p in self.personas
-                }
-                for future in as_completed(futures):
+                ]
+                for i, future in enumerate(future_list):
                     try:
                         round1.append(future.result())
                     except Exception as e:
-                        persona = futures[future]
                         round1.append(Rewrite(
-                            persona_name=persona.name,
+                            persona_name=self.personas[i].name,
                             original=sentence,
                             rewritten=sentence,
                             reasoning=f"Error: {e}",
@@ -224,20 +229,19 @@ class SentenceEvolver:
 
             if self.parallel:
                 with ThreadPoolExecutor(max_workers=min(len(self.personas), 5)) as pool:
-                    futures = {
+                    future_list = [
                         pool.submit(
                             self._call_persona, p, sentence, issue_flags, 2,
                             [pv for j, pv in enumerate(peer_versions) if j != i],
-                        ): p
+                        )
                         for i, p in enumerate(self.personas)
-                    }
-                    for future in as_completed(futures):
+                    ]
+                    for i, future in enumerate(future_list):
                         try:
                             round2.append(future.result())
                         except Exception as e:
-                            persona = futures[future]
                             round2.append(Rewrite(
-                                persona_name=persona.name,
+                                persona_name=self.personas[i].name,
                                 original=sentence,
                                 rewritten=sentence,
                                 reasoning=f"Error in Delphi: {e}",
@@ -331,8 +335,9 @@ DISAGREEMENTS: [where experts diverged — these are genuine choices for the aut
 """
 
         response = self.client.messages.create(
-            model=self.model,
-            max_tokens=self.max_tokens,
+            model=self.model,  # aggregator uses the primary (stronger) model
+            max_tokens=self.aggregator_max_tokens,
+            system="You are a master editor synthesizing the best sentence from multiple expert rewrites.",
             messages=[{"role": "user", "content": aggregator_prompt}],
         )
 

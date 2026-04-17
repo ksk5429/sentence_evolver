@@ -139,7 +139,13 @@ def main() -> None:
         "--model",
         type=str,
         default="claude-sonnet-4-20250514",
-        help="Claude model to use (default: claude-sonnet-4-20250514)",
+        help="Claude model for aggregator (default: claude-sonnet-4-20250514)",
+    )
+    parser.add_argument(
+        "--worker-model",
+        type=str,
+        default=None,
+        help="Cheaper model for persona workers (default: same as --model). Use claude-haiku-4-5-20251001 for ~80%% cost reduction.",
     )
     parser.add_argument(
         "-v", "--verbose",
@@ -178,10 +184,22 @@ def main() -> None:
     sentences: list[tuple[str, list[str]]] = []
 
     if args.from_checker:
-        data = json.loads(Path(args.from_checker).read_text(encoding="utf-8"))
+        checker_path = Path(args.from_checker)
+        if not checker_path.exists():
+            print(f"File not found: {args.from_checker}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            data = json.loads(checker_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            print(f"Invalid JSON in {args.from_checker}: {e}", file=sys.stderr)
+            sys.exit(1)
         sentences = _extract_flagged_sentences(data)[:args.max_sentences]
     elif args.stdin:
-        data = json.loads(sys.stdin.read())
+        try:
+            data = json.loads(sys.stdin.read())
+        except json.JSONDecodeError as e:
+            print(f"Invalid JSON from stdin: {e}", file=sys.stderr)
+            sys.exit(1)
         sentences = _extract_flagged_sentences(data)[:args.max_sentences]
     elif args.sentence:
         sentences = [(args.sentence, [])]
@@ -200,6 +218,7 @@ def main() -> None:
         persona_names = args.personas.split(",") if args.personas else None
         evolver = SentenceEvolver(
             model=args.model,
+            worker_model=args.worker_model,
             personas=persona_names,
             enable_delphi=not args.no_delphi,
         )
